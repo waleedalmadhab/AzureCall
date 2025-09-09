@@ -20,9 +20,15 @@ import com.azure.android.communication.common.CommunicationTokenCredential;
 import com.azure.android.communication.common.CommunicationTokenRefreshOptions;
 import com.azure.android.communication.ui.calling.CallComposite;
 import com.azure.android.communication.ui.calling.CallCompositeBuilder;
+import com.azure.android.communication.ui.calling.models.CallCompositeCallScreenHeaderViewData;
+import com.azure.android.communication.ui.calling.models.CallCompositeCallScreenOptions;
+import com.azure.android.communication.ui.calling.models.CallCompositeErrorCode;
+import com.azure.android.communication.ui.calling.models.CallCompositeGroupCallLocator;
 import com.azure.android.communication.ui.calling.models.CallCompositeJoinLocator;
+import com.azure.android.communication.ui.calling.models.CallCompositeLocalOptions;
+import com.azure.android.communication.ui.calling.models.CallCompositeSetupScreenViewData;
 import com.azure.android.communication.ui.calling.models.CallCompositeTeamsMeetingLinkLocator;
-
+import java.util.UUID;
 public class AzureCallingPlugin implements
         FlutterPlugin,
         MethodChannel.MethodCallHandler,
@@ -71,16 +77,34 @@ public class AzureCallingPlugin implements
       // Expecting args from Dart: { token: "...", meetingLink: "...", displayName: "..." }
       String token = null;
       String meetingLink = null;
+      String groupId = null;
       String displayName = null;
+      String title = "";
+      String subTitle = "";
+      boolean skipSetupScreen=false;
+      boolean cameraOn=false;
+      boolean microphoneOn=false;
       if (call.arguments instanceof Map) {
         Map<?, ?> args = (Map<?, ?>) call.arguments;
         token = (String) args.get("token");
         meetingLink = (String) args.get("meetingLink");
+        groupId = (String) args.get("groupId");
         displayName = (String) args.get("displayName");
+        // Strings with default fallback
+        title = args.get("title") != null ? (String) args.get("title") : "";
+        subTitle = args.get("subTitle") != null ? (String) args.get("subTitle") : "";
+
+        // Booleans with default fallback
+        skipSetupScreen = args.get("skipSetupScreen") instanceof Boolean
+                ? (Boolean) args.get("skipSetupScreen") : false;
+        cameraOn = args.get("cameraOn") instanceof Boolean
+                ? (Boolean) args.get("cameraOn") : false;
+        microphoneOn = args.get("microphoneOn") instanceof Boolean
+                ? (Boolean) args.get("microphoneOn") : false;
       }
 
       try {
-        startCall(token, meetingLink, displayName);
+        startCall(token, meetingLink,groupId, displayName,title,subTitle,skipSetupScreen,cameraOn,microphoneOn);
         result.success(null);
       } catch (Exception e) {
         result.error("START_CALL_FAILED", e.getMessage(), null);
@@ -98,7 +122,7 @@ public class AzureCallingPlugin implements
     applicationContext = null;
   }
 
-  private void startCall(String token, String meetingLink, String displayName) {
+  private void startCall(String token, String meetingLink,String groupId, String displayName,String title,String subTitle,boolean skipSetupScreen,boolean cameraOn,boolean microphoneOn) {
     if (applicationContext == null) throw new IllegalStateException("Application context is null");
     if (activity == null) throw new IllegalStateException("Activity is null (plugin must be attached to an Activity)");
 
@@ -111,8 +135,20 @@ public class AzureCallingPlugin implements
     CommunicationTokenCredential credential =
             new CommunicationTokenCredential(refreshOptions);
 
-    CallCompositeJoinLocator locator =
-            new CallCompositeTeamsMeetingLinkLocator(meetingLink);
+
+
+
+    CallCompositeJoinLocator locator;
+
+    if(!groupId.isEmpty() ){
+
+      locator=    new CallCompositeGroupCallLocator(UUID.fromString(groupId));
+
+    }  else{
+      locator=                 new CallCompositeTeamsMeetingLinkLocator(meetingLink);
+
+    }
+
 
     CallComposite callComposite = new CallCompositeBuilder()
             .applicationContext(applicationContext)   // <-- use app context here
@@ -124,7 +160,23 @@ public class AzureCallingPlugin implements
       Log.e("ACS_UI", "Join error: " + e.getErrorCode(), e.getCause());
     });
 
+
+
+    CallCompositeCallScreenHeaderViewData callScreenHeaderViewData = new CallCompositeCallScreenHeaderViewData();
+    callScreenHeaderViewData.setTitle(title);
+    callScreenHeaderViewData.setSubtitle(subTitle);
+
+// Create call screen options
+    CallCompositeCallScreenOptions callScreenOptions = new CallCompositeCallScreenOptions();
+    callScreenOptions.setHeaderViewData(callScreenHeaderViewData);
+    final CallCompositeLocalOptions localOptions = new CallCompositeLocalOptions().
+            setSkipSetupScreen(skipSetupScreen).
+            setCameraOn(cameraOn).
+            setMicrophoneOn(microphoneOn).
+            setCallScreenOptions(callScreenOptions);
+
+
     // Launch must use an Activity; do it on UI thread for safety
-    activity.runOnUiThread(() -> callComposite.launch(activity, locator));
+    activity.runOnUiThread(() -> callComposite.launch(activity, locator,localOptions));
   }
 }
